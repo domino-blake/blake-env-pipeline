@@ -82,48 +82,12 @@ jobs:
           echo "Publishing demo_pkg==$PKG_VERSION to Domino environment $DOMINO_ENVIRONMENT_ID"
           echo "Installing from: $WHEEL_URL"
 
-          # Fetch the current environment to get the base image
-          ENV_STATUS=$(curl --silent --output /tmp/domino_env.json --write-out "%{http_code}" \
-            --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
-            --header "X-Domino-Api-Key: $DOMINO_API_KEY")
-
-          echo "GET environment HTTP status: $ENV_STATUS"
-          echo "Environment response: $(cat /tmp/domino_env.json)"
-
-          if [ "$ENV_STATUS" -lt 200 ] || [ "$ENV_STATUS" -ge 300 ]; then
-            echo "Error: failed to fetch environment with HTTP $ENV_STATUS"
-            exit 1
-          fi
-
-          # Print full response to identify correct image field
-          python3 -c "
-          import json
-          data = json.load(open('/tmp/domino_env.json'))
-          print(json.dumps(data, indent=2))
-          "
-
-          BASE_IMAGE=$(python3 -c "
-          import json
-          data = json.load(open('/tmp/domino_env.json'))
-          # Try fields in order of likelihood for the custom base image
-          for field in ('customBaseImageTag', 'customBaseImage', 'baseImage', 'image'):
-              val = data.get(field)
-              if val:
-                  print(val)
-                  break
-          ")
-          echo "Base image: $BASE_IMAGE"
-
-          # Create new revision with wheel URL
           HTTP_STATUS=$(curl --silent --output /tmp/domino_response.json --write-out "%{http_code}" \
             --request POST \
             --url "$DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
             --header "Content-Type: application/json" \
-            --data "{
-              \"image\": \"$BASE_IMAGE\",
-              \"dockerfileInstructions\": \"RUN pip install --no-cache-dir $WHEEL_URL\"
-            }")
+            --data "{\"dockerfileInstructions\": \"RUN pip install --no-cache-dir $WHEEL_URL\"}")
 
           RESPONSE=$(cat /tmp/domino_response.json)
           echo "HTTP status: $HTTP_STATUS"
@@ -134,7 +98,7 @@ jobs:
             exit 1
           fi
 
-          REVISION_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))")
+          REVISION_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['environmentRevision']['id'])")
           echo "Revision ID: $REVISION_ID"
 
       - name: Wait for build to complete
@@ -154,7 +118,7 @@ jobs:
             STATUS=$(curl --silent --fail \
               --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
               --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
-              | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('latestRevision', {}).get('status', 'Unknown'))")
+              | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['environment']['latestRevision']['status'])")
 
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS — status: $STATUS"
 
