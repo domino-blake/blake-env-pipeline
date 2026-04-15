@@ -87,7 +87,7 @@ jobs:
             --url "$DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
             --header "Content-Type: application/json" \
-            --data "{\"dockerfileInstructions\": \"RUN pip install --no-cache-dir $WHEEL_URL\"}")
+            --data "{\"image\": \"\", \"dockerfileInstructions\": \"RUN pip install --no-cache-dir $WHEEL_URL\"}")
 
           RESPONSE=$(cat /tmp/domino_response.json)
           echo "HTTP status: $HTTP_STATUS"
