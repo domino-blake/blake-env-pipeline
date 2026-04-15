@@ -125,3 +125,42 @@ jobs:
           echo "Revision ID: $REVISION_ID"
           echo "revision_id=$REVISION_ID" >> $GITHUB_OUTPUT
 
+      - name: Wait for build to complete
+        if: steps.version.outputs.changed == 'true'
+        env:
+          DOMINO_API_HOST: ${{ secrets.DOMINO_API_HOST }}
+          DOMINO_API_KEY: ${{ secrets.DOMINO_API_KEY }}
+          DOMINO_ENVIRONMENT_ID: ${{ secrets.DOMINO_ENVIRONMENT_ID }}
+          REVISION_ID: ${{ steps.publish.outputs.revision_id }}
+        run: |
+          echo "Polling for build completion (revision $REVISION_ID)..."
+          MAX_ATTEMPTS=40   # 40 * 30s = 20 minutes
+          ATTEMPT=0
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+
+            STATUS=$(curl --silent --fail \
+              --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision/$REVISION_ID" \
+              --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
+              | python3 -c "import sys, json; print(json.load(sys.stdin).get('status', 'Unknown'))")
+
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS — status: $STATUS"
+
+            case "$STATUS" in
+              Succeeded)
+                echo "Environment build succeeded."
+                exit 0
+                ;;
+              Failed|Killed)
+                echo "Environment build $STATUS."
+                exit 1
+                ;;
+              *)
+                sleep 30
+                ;;
+            esac
+          done
+
+          echo "Timed out waiting for environment build."
+          exit 1
