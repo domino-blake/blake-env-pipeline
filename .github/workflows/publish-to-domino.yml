@@ -82,6 +82,14 @@ jobs:
           echo "Publishing demo_pkg==$PKG_VERSION to Domino environment $DOMINO_ENVIRONMENT_ID"
           echo "Installing from: $WHEEL_URL"
 
+          # Fetch full environment JSON for debugging
+          echo "--- GET environment ---"
+          curl --silent \
+            --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
+            --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
+            | python3 -m json.tool
+          echo "--- end GET environment ---"
+
           HTTP_STATUS=$(curl --silent --output /tmp/domino_response.json --write-out "%{http_code}" \
             --request POST \
             --url "$DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
