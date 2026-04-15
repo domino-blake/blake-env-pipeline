@@ -82,20 +82,36 @@ jobs:
           echo "Publishing demo_pkg==$PKG_VERSION to Domino environment $DOMINO_ENVIRONMENT_ID"
           echo "Installing from: $WHEEL_URL"
 
-          # Fetch full environment JSON for debugging
-          echo "--- GET environment ---"
-          curl --silent \
+          # Fetch latest revision ID to use as base
+          BASE_REVISION_ID=$(curl --silent \
             --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
-            | python3 -m json.tool
-          echo "--- end GET environment ---"
+            | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['environment']['latestRevision']['id'])")
+          echo "Base revision ID: $BASE_REVISION_ID"
 
           HTTP_STATUS=$(curl --silent --output /tmp/domino_response.json --write-out "%{http_code}" \
             --request POST \
-            --url "$DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
+            --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
             --header "Content-Type: application/json" \
-            --data "{\"image\": \"\", \"dockerfileInstructions\": \"RUN pip install --no-cache-dir $WHEEL_URL\"}")
+            --data "{
+              \"newEnvironmentRevision\": {
+                \"supportsPackagePersistence\": true,
+                \"baseRevision\": {\"baseRevisionId\": \"$BASE_REVISION_ID\"},
+                \"workspaceTools\": \"\",
+                \"supportedClusters\": [],
+                \"dockerfileInstructions\": \"RUN pip install --no-cache-dir $WHEEL_URL\",
+                \"environmentVariables\": {},
+                \"preSetupScript\": \"\",
+                \"postSetupScript\": \"\",
+                \"preRunScript\": \"\",
+                \"postRunScript\": \"\",
+                \"dockerArguments\": [],
+                \"summary\": \"\",
+                \"skipCache\": false,
+                \"shouldUseVpn\": false
+              }
+            }")
 
           RESPONSE=$(cat /tmp/domino_response.json)
           echo "HTTP status: $HTTP_STATUS"
