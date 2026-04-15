@@ -1,0 +1,107 @@
+name: Publish to Domino Environment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "demo_pkg/__init__.py"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect version change
+        id: version
+        run: |
+          CURRENT=$(python3 -c "
+          import re
+          content = open('demo_pkg/__init__.py').read()
+          print(re.search(r'__version__\s*=\s*[\"\'](.*?)[\"\']', content).group(1))
+          ")
+
+          PREVIOUS=$(git show HEAD~1:demo_pkg/__init__.py | python3 -c "
+          import re, sys
+          content = sys.stdin.read()
+          print(re.search(r'__version__\s*=\s*[\"\'](.*?)[\"\']', content).group(1))
+          ")
+
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
+
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Version changed: $PREVIOUS -> $CURRENT"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Version unchanged ($CURRENT), skipping publish"
+          fi
+
+      - name: Publish new revision to Domino
+        if: steps.version.outputs.changed == 'true'
+        env:
+          DOMINO_API_HOST: ${{ secrets.DOMINO_API_HOST }}
+          DOMINO_API_KEY: ${{ secrets.DOMINO_API_KEY }}
+          DOMINO_ENVIRONMENT_ID: ${{ secrets.DOMINO_ENVIRONMENT_ID }}
+          PKG_VERSION: ${{ steps.version.outputs.current }}
+          COMMIT_SHA: ${{ github.sha }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          echo "Publishing demo_pkg==$PKG_VERSION to Domino environment $DOMINO_ENVIRONMENT_ID"
+
+          RESPONSE=$(curl --silent --show-error --fail \
+            --request POST \
+            --url "$DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
+            --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
+            --header "Content-Type: application/json" \
+            --data "{
+              \"dockerfileInstructions\": \"RUN pip install --no-cache-dir git+$REPO_URL.git@$COMMIT_SHA\"
+            }")
+
+          echo "Domino API response: $RESPONSE"
+
+          REVISION_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))")
+          echo "Revision ID: $REVISION_ID"
+
+      - name: Wait for build to complete
+        if: steps.version.outputs.changed == 'true'
+        env:
+          DOMINO_API_HOST: ${{ secrets.DOMINO_API_HOST }}
+          DOMINO_API_KEY: ${{ secrets.DOMINO_API_KEY }}
+          DOMINO_ENVIRONMENT_ID: ${{ secrets.DOMINO_ENVIRONMENT_ID }}
+        run: |
+          echo "Polling for build completion..."
+          MAX_ATTEMPTS=40   # 40 * 30s = 20 minutes
+          ATTEMPT=0
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+
+            STATUS=$(curl --silent --fail \
+              --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
+              --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
+              | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('latestRevision', {}).get('status', 'Unknown'))")
+
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS — status: $STATUS"
+
+            case "$STATUS" in
+              Succeeded)
+                echo "Environment build succeeded."
+                exit 0
+                ;;
+              Failed)
+                echo "Environment build failed."
+                exit 1
+                ;;
+              *)
+                sleep 30
+                ;;
+            esac
+          done
+
+          echo "Timed out waiting for environment build."
+          exit 1
