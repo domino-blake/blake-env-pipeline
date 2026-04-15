@@ -83,19 +83,12 @@ jobs:
           echo "Publishing demo_pkg==$PKG_VERSION to Domino environment $DOMINO_ENVIRONMENT_ID"
           echo "Installing from: $WHEEL_URL"
 
-          # Use the currently selected (active) revision as the base to avoid cascade rebuilds
-          SELECTED_REVISION_ID=$(curl --silent \
-            --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
-            --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
-            | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['environment']['selectedRevision']['id'])")
-          echo "Selected revision ID: $SELECTED_REVISION_ID"
-
           PAYLOAD=$(python3 -c "
           import json
           print(json.dumps({
             'newEnvironmentRevision': {
               'supportsPackagePersistence': True,
-              'baseRevision': {'baseRevisionId': '$SELECTED_REVISION_ID'},
+              'baseRevision': {'baseRevisionId': '69d96eae59ee5b5ade509779'},
               'workspaceTools': '',
               'supportedClusters': [],
               'dockerfileInstructions': 'RUN pip install --no-cache-dir $WHEEL_URL',
