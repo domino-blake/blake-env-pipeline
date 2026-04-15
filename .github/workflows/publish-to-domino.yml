@@ -82,14 +82,13 @@ jobs:
           echo "Publishing demo_pkg==$PKG_VERSION to Domino environment $DOMINO_ENVIRONMENT_ID"
           echo "Installing from: $WHEEL_URL"
 
-          # Fetch latest revision ID to use as base
+          # Fetch base.id from the current revision — this is what preserves the base image
           BASE_REVISION_ID=$(curl --silent \
-            --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
+            --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
-            | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['environment']['latestRevision']['id'])")
+            | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['base']['id'])")
           echo "Base revision ID: $BASE_REVISION_ID"
 
-          # Build payload and print it for debugging
           PAYLOAD=$(python3 -c "
           import json
           print(json.dumps({
@@ -112,18 +111,13 @@ jobs:
           }))
           ")
           echo "Request payload: $PAYLOAD"
-          echo "POST URL: $DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision"
 
-          HTTP_STATUS=$(curl --verbose --output /tmp/domino_response.json --write-out "%{http_code}" \
+          HTTP_STATUS=$(curl --silent --output /tmp/domino_response.json --write-out "%{http_code}" \
             --request POST \
             --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
             --header "Content-Type: application/json" \
-            --data "$PAYLOAD" 2>/tmp/domino_curl_verbose.txt)
-
-          echo "--- curl verbose ---"
-          cat /tmp/domino_curl_verbose.txt
-          echo "--- end curl verbose ---"
+            --data "$PAYLOAD")
 
           RESPONSE=$(cat /tmp/domino_response.json)
           echo "HTTP status: $HTTP_STATUS"
@@ -156,9 +150,9 @@ jobs:
             ATTEMPT=$((ATTEMPT + 1))
 
             STATUS=$(curl --silent --fail \
-              --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
+              --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision" \
               --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
-              | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['environment']['latestRevision']['status'])")
+              | python3 -c "import sys, json; data=json.load(sys.stdin); rev=data.get('environmentRevision', {}); print('Succeeded' if rev.get('isBuilt') else 'Building')")
 
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS — status: $STATUS"
 

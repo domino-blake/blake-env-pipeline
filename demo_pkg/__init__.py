@@ -1,6 +1,6 @@
 from .core import greet as _greet, get_info as _get_info
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 
 
 def greet(name: str = "World") -> str:
