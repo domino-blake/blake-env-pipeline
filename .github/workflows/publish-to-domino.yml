@@ -112,11 +112,11 @@ jobs:
           }))
           ")
           echo "Request payload: $PAYLOAD"
-          echo "POST URL: $DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions"
+          echo "POST URL: $DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision"
 
           HTTP_STATUS=$(curl --verbose --output /tmp/domino_response.json --write-out "%{http_code}" \
             --request POST \
-            --url "$DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
+            --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
             --header "Content-Type: application/json" \
             --data "$PAYLOAD" 2>/tmp/domino_curl_verbose.txt)
