@@ -95,10 +95,22 @@ jobs:
             exit 1
           fi
 
+          # Print full response to identify correct image field
+          python3 -c "
+          import json
+          data = json.load(open('/tmp/domino_env.json'))
+          print(json.dumps(data, indent=2))
+          "
+
           BASE_IMAGE=$(python3 -c "
           import json
           data = json.load(open('/tmp/domino_env.json'))
-          print(data.get('image', data.get('latestRevision', {}).get('image', '')))
+          # Try fields in order of likelihood for the custom base image
+          for field in ('customBaseImageTag', 'customBaseImage', 'baseImage', 'image'):
+              val = data.get(field)
+              if val:
+                  print(val)
+                  break
           ")
           echo "Base image: $BASE_IMAGE"
 
