@@ -83,10 +83,18 @@ jobs:
           echo "Installing from: $WHEEL_URL"
 
           # Fetch base.id from the current revision — this is what preserves the base image
-          BASE_REVISION_ID=$(curl --silent \
+          GET_STATUS=$(curl --silent --output /tmp/domino_get.json --write-out "%{http_code}" \
             --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision" \
-            --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
-            | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['base']['id'])")
+            --header "X-Domino-Api-Key: $DOMINO_API_KEY")
+          echo "GET status: $GET_STATUS"
+          echo "GET response: $(cat /tmp/domino_get.json)"
+
+          if [ "$GET_STATUS" -lt 200 ] || [ "$GET_STATUS" -ge 300 ]; then
+            echo "Error: GET environment revision failed with HTTP $GET_STATUS"
+            exit 1
+          fi
+
+          BASE_REVISION_ID=$(python3 -c "import json; data=json.load(open('/tmp/domino_get.json')); print(data['base']['id'])")
           echo "Base revision ID: $BASE_REVISION_ID"
 
           PAYLOAD=$(python3 -c "
