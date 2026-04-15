@@ -72,6 +72,7 @@ jobs:
 
       - name: Publish new revision to Domino
         if: steps.version.outputs.changed == 'true'
+        id: publish
         env:
           DOMINO_API_HOST: ${{ secrets.DOMINO_API_HOST }}
           DOMINO_API_KEY: ${{ secrets.DOMINO_API_KEY }}
@@ -115,10 +116,6 @@ jobs:
           echo "HTTP status: $HTTP_STATUS"
           echo "Domino API response: $RESPONSE"
 
-          RESPONSE=$(cat /tmp/domino_response.json)
-          echo "HTTP status: $HTTP_STATUS"
-          echo "Domino API response: $RESPONSE"
-
           if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
             echo "Error: API call failed with HTTP $HTTP_STATUS"
             exit 1
@@ -126,6 +123,7 @@ jobs:
 
           REVISION_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['environmentRevision']['id'])")
           echo "Revision ID: $REVISION_ID"
+          echo "revision_id=$REVISION_ID" >> $GITHUB_OUTPUT
 
       - name: Wait for build to complete
         if: steps.version.outputs.changed == 'true'
@@ -133,8 +131,9 @@ jobs:
           DOMINO_API_HOST: ${{ secrets.DOMINO_API_HOST }}
           DOMINO_API_KEY: ${{ secrets.DOMINO_API_KEY }}
           DOMINO_ENVIRONMENT_ID: ${{ secrets.DOMINO_ENVIRONMENT_ID }}
+          REVISION_ID: ${{ steps.publish.outputs.revision_id }}
         run: |
-          echo "Polling for build completion..."
+          echo "Polling for build completion (revision $REVISION_ID)..."
           MAX_ATTEMPTS=40   # 40 * 30s = 20 minutes
           ATTEMPT=0
 
@@ -142,19 +141,9 @@ jobs:
             ATTEMPT=$((ATTEMPT + 1))
 
             STATUS=$(curl --silent --fail \
-              --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision" \
+              --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision/$REVISION_ID" \
               --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
-              | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          rev = data.get('environmentRevision', {})
-          if rev.get('isBuilt'):
-            print('Succeeded')
-          elif data.get('hasRunningBuild'):
-            print('Building')
-          else:
-            print('Failed')
-          ")
+              | python3 -c "import sys, json; print(json.load(sys.stdin).get('status', 'Unknown'))")
 
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS — status: $STATUS"
 
