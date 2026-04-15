@@ -9,6 +9,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to create GitHub releases
 
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +43,33 @@ jobs:
             echo "Version unchanged ($CURRENT), skipping publish"
           fi
 
+      - name: Build package
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          pip install --quiet build
+          python -m build
+          echo "Built artifacts:"
+          ls dist/
+
+      - name: Create GitHub release and upload wheel
+        if: steps.version.outputs.changed == 'true'
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG_VERSION: ${{ steps.version.outputs.current }}
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          WHEEL_FILENAME=$(basename $WHEEL)
+
+          gh release create "v$PKG_VERSION" \
+            --title "v$PKG_VERSION" \
+            --notes "demo_pkg $PKG_VERSION" \
+            "$WHEEL"
+
+          WHEEL_URL="${{ github.server_url }}/${{ github.repository }}/releases/download/v$PKG_VERSION/$WHEEL_FILENAME"
+          echo "wheel_url=$WHEEL_URL" >> $GITHUB_OUTPUT
+          echo "Wheel published at: $WHEEL_URL"
+
       - name: Publish new revision to Domino
         if: steps.version.outputs.changed == 'true'
         env:
@@ -48,18 +77,40 @@ jobs:
           DOMINO_API_KEY: ${{ secrets.DOMINO_API_KEY }}
           DOMINO_ENVIRONMENT_ID: ${{ secrets.DOMINO_ENVIRONMENT_ID }}
           PKG_VERSION: ${{ steps.version.outputs.current }}
-          COMMIT_SHA: ${{ github.sha }}
-          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          WHEEL_URL: ${{ steps.release.outputs.wheel_url }}
         run: |
           echo "Publishing demo_pkg==$PKG_VERSION to Domino environment $DOMINO_ENVIRONMENT_ID"
+          echo "Installing from: $WHEEL_URL"
 
+          # Fetch the current environment to get the base image
+          ENV_STATUS=$(curl --silent --output /tmp/domino_env.json --write-out "%{http_code}" \
+            --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
+            --header "X-Domino-Api-Key: $DOMINO_API_KEY")
+
+          echo "GET environment HTTP status: $ENV_STATUS"
+          echo "Environment response: $(cat /tmp/domino_env.json)"
+
+          if [ "$ENV_STATUS" -lt 200 ] || [ "$ENV_STATUS" -ge 300 ]; then
+            echo "Error: failed to fetch environment with HTTP $ENV_STATUS"
+            exit 1
+          fi
+
+          BASE_IMAGE=$(python3 -c "
+          import json
+          data = json.load(open('/tmp/domino_env.json'))
+          print(data.get('image', data.get('latestRevision', {}).get('image', '')))
+          ")
+          echo "Base image: $BASE_IMAGE"
+
+          # Create new revision with wheel URL
           HTTP_STATUS=$(curl --silent --output /tmp/domino_response.json --write-out "%{http_code}" \
             --request POST \
             --url "$DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
             --header "Content-Type: application/json" \
             --data "{
-              \"dockerfileInstructions\": \"RUN pip install --no-cache-dir git+$REPO_URL.git@$COMMIT_SHA\"
+              \"image\": \"$BASE_IMAGE\",
+              \"dockerfileInstructions\": \"RUN pip install --no-cache-dir $WHEEL_URL\"
             }")
 
           RESPONSE=$(cat /tmp/domino_response.json)
