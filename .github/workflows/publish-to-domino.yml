@@ -89,29 +89,45 @@ jobs:
             | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['environment']['latestRevision']['id'])")
           echo "Base revision ID: $BASE_REVISION_ID"
 
-          HTTP_STATUS=$(curl --silent --output /tmp/domino_response.json --write-out "%{http_code}" \
+          # Build payload and print it for debugging
+          PAYLOAD=$(python3 -c "
+          import json
+          print(json.dumps({
+            'newEnvironmentRevision': {
+              'supportsPackagePersistence': True,
+              'baseRevision': {'baseRevisionId': '$BASE_REVISION_ID'},
+              'workspaceTools': '',
+              'supportedClusters': [],
+              'dockerfileInstructions': 'RUN pip install --no-cache-dir $WHEEL_URL',
+              'environmentVariables': {},
+              'preSetupScript': '',
+              'postSetupScript': '',
+              'preRunScript': '',
+              'postRunScript': '',
+              'dockerArguments': [],
+              'summary': '',
+              'skipCache': False,
+              'shouldUseVpn': False
+            }
+          }))
+          ")
+          echo "Request payload: $PAYLOAD"
+          echo "POST URL: $DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions"
+
+          HTTP_STATUS=$(curl --verbose --output /tmp/domino_response.json --write-out "%{http_code}" \
             --request POST \
-            --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
+            --url "$DOMINO_API_HOST/api/environments/beta/environments/$DOMINO_ENVIRONMENT_ID/revisions" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
             --header "Content-Type: application/json" \
-            --data "{
-              \"newEnvironmentRevision\": {
-                \"supportsPackagePersistence\": true,
-                \"baseRevision\": {\"baseRevisionId\": \"$BASE_REVISION_ID\"},
-                \"workspaceTools\": \"\",
-                \"supportedClusters\": [],
-                \"dockerfileInstructions\": \"RUN pip install --no-cache-dir $WHEEL_URL\",
-                \"environmentVariables\": {},
-                \"preSetupScript\": \"\",
-                \"postSetupScript\": \"\",
-                \"preRunScript\": \"\",
-                \"postRunScript\": \"\",
-                \"dockerArguments\": [],
-                \"summary\": \"\",
-                \"skipCache\": false,
-                \"shouldUseVpn\": false
-              }
-            }")
+            --data "$PAYLOAD" 2>/tmp/domino_curl_verbose.txt)
+
+          echo "--- curl verbose ---"
+          cat /tmp/domino_curl_verbose.txt
+          echo "--- end curl verbose ---"
+
+          RESPONSE=$(cat /tmp/domino_response.json)
+          echo "HTTP status: $HTTP_STATUS"
+          echo "Domino API response: $RESPONSE"
 
           RESPONSE=$(cat /tmp/domino_response.json)
           echo "HTTP status: $HTTP_STATUS"
