@@ -82,9 +82,16 @@ jobs:
           echo "Publishing demo_pkg==$PKG_VERSION to Domino environment $DOMINO_ENVIRONMENT_ID"
           echo "Installing from: $WHEEL_URL"
 
-          # Fetch base.id from the current revision — this is what preserves the base image
+          # Step 1: get the latest revision ID via v1 endpoint
+          LATEST_REVISION_ID=$(curl --silent \
+            --url "$DOMINO_API_HOST/api/environments/v1/environments/$DOMINO_ENVIRONMENT_ID" \
+            --header "X-Domino-Api-Key: $DOMINO_API_KEY" \
+            | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['environment']['latestRevision']['id'])")
+          echo "Latest revision ID: $LATEST_REVISION_ID"
+
+          # Step 2: get base.id from the specific revision
           GET_STATUS=$(curl --silent --output /tmp/domino_get.json --write-out "%{http_code}" \
-            --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision" \
+            --url "$DOMINO_API_HOST/v4/environments/$DOMINO_ENVIRONMENT_ID/environmentRevision/$LATEST_REVISION_ID" \
             --header "X-Domino-Api-Key: $DOMINO_API_KEY")
           echo "GET status: $GET_STATUS"
           echo "GET response: $(cat /tmp/domino_get.json)"
